@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#C8321E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Inventario">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Inventario BK</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+[hidden]{display:none!important}
+img{max-width:100%}
+</style>
+<style>
+/* Layout: una columna angosta tipo planilla de cocina; pestañas arriba, lista agrupada por categoría, hoja inferior para anotar. */
+:root{
+  --bg:#F0F2F0; --surface:#FFFFFF; --ink:#1E1C1A; --muted:#66655F; --line:#D8DBD6;
+  --accent:#C8321E; --accent-ink:#FFFFFF; --warn:#B7790A; --warn-bg:#FBEFD2; --ok:#2C7048; --ok-bg:#DDF0E4;
+  --bad-bg:#F9DDD8; --scrim:rgba(20,18,16,.5);
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#161615; --surface:#222120; --ink:#F2EFEA; --muted:#A5A19A; --line:#37352F;
+  --accent:#F0553F; --accent-ink:#1A0B08; --warn:#F2B840; --warn-bg:#3B2F12; --ok:#5BBE82; --ok-bg:#16301F;
+  --bad-bg:#40201B; --scrim:rgba(0,0,0,.65); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#161615; --surface:#222120; --ink:#F2EFEA; --muted:#A5A19A; --line:#37352F;
+  --accent:#F0553F; --accent-ink:#1A0B08; --warn:#F2B840; --warn-bg:#3B2F12; --ok:#5BBE82; --ok-bg:#16301F;
+  --bad-bg:#40201B; --scrim:rgba(0,0,0,.65); color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.4;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.app{max-width:720px;margin:0 auto}
+header{padding:18px 0 10px}
+h1{font-family:var(--f-display);font-weight:700;font-size:2.1rem;line-height:1;letter-spacing:.01em;margin:0;text-transform:uppercase}
+#sub{margin:6px 0 0;color:var(--muted);font-size:.9rem}
+.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);display:flex;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}
+.tab{flex:1;min-height:44px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;font:600 .95rem var(--f-body);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.badge{background:var(--accent);color:var(--accent-ink);border-radius:99px;font-size:.75rem;min-width:20px;height:20px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+main{padding-top:14px;display:flex;flex-direction:column;gap:14px}
+.note{color:var(--muted);margin:0}
+.bar{display:flex;gap:8px}
+input,select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;min-height:44px;padding:0 12px;width:100%;min-width:0}
+input:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:600 .95rem var(--f-body);cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--accent);border-color:var(--accent)}
+.btn:disabled{opacity:.5}
+.group{display:flex;flex-direction:column;gap:6px}
+.group h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;letter-spacing:.08em;text-transform:uppercase;margin:8px 0 0;color:var(--muted)}
+.row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;min-height:56px;padding:8px 12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;color:var(--ink);font:inherit;cursor:pointer}
+.row .name{flex:1;min-width:0}
+.row .name b{display:block;font-weight:600;overflow-wrap:anywhere}
+.row .name small{color:var(--muted)}
+.qty{font-family:var(--f-display);font-weight:700;font-size:1.6rem;line-height:1;text-align:right;font-variant-numeric:tabular-nums}
+.qty small{font:500 .8rem var(--f-body);color:var(--muted);margin-left:3px}
+.pill{font-size:.75rem;font-weight:600;border-radius:99px;padding:2px 9px;white-space:nowrap}
+.pill.pedir{background:var(--bad-bg);color:var(--accent)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.card h3{font-family:var(--f-display);font-weight:700;font-size:1.3rem;margin:0;text-transform:capitalize}
+.line{display:flex;justify-content:space-between;gap:12px;font-variant-numeric:tabular-nums}
+.line span:first-child{min-width:0;overflow-wrap:anywhere}
+.meter{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent)}
+.seg{display:flex;gap:6px}
+.seg .tab{font-size:.9rem}
+.empty{text-align:center;padding:36px 8px;display:flex;flex-direction:column;gap:12px;align-items:center}
+.empty h2{font-family:var(--f-display);font-size:1.6rem;margin:0;text-transform:uppercase}
+pre.out{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0;white-space:pre-wrap;font:inherit;font-size:.95rem;overflow-wrap:anywhere}
+#sheet{position:fixed;inset:0;z-index:40;background:var(--scrim);display:flex;align-items:flex-end;justify-content:center}
+.panel{background:var(--bg);width:100%;max-width:720px;max-height:92%;overflow:auto;border-radius:14px 14px 0 0;padding:16px max(16px,env(safe-area-inset-left,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
+.panel h2{font-family:var(--f-display);font-weight:700;font-size:1.6rem;margin:0;text-transform:uppercase;overflow-wrap:anywhere}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:.85rem;font-weight:600;color:var(--muted)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips .btn{min-width:56px;padding:0 10px}
+.preview{margin:0;color:var(--muted)}
+.preview b{color:var(--ink);font-variant-numeric:tabular-nums}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;max-width:90%;font-weight:500}
+@media (prefers-reduced-motion:no-preference){.row,.btn,.tab{transition:background-color .12s,border-color .12s}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Inventario BK</h1>
+    <p id="sub">Conectando…</p>
+  </header>
+  <nav class="tabs" id="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="inv" aria-selected="true">Inventario</button>
+    <button class="tab" role="tab" data-tab="ped" aria-selected="false">Pedido <span class="badge" id="pedBadge" hidden></span></button>
+    <button class="tab" role="tab" data-tab="con" aria-selected="false">Consumo</button>
+  </nav>
+  <main id="view"></main>
+</div>
+<div id="sheet" hidden></div>
+<div id="toast" hidden></div>
+
+<script>
+(async function(){
+const $ = s => document.querySelector(s);
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const k in props) {
+    const v = props[k];
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k === 'value') n.value = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v === true) n.setAttribute(k, '');
+    else if (v !== false && v != null) n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) { if (c == null || c === false) continue; n.append(c.nodeType ? c : document.createTextNode(c)); }
+  return n;
+};
+const fmt = n => Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 });
+const r2 = n => Math.round(n * 100) / 100;
+const dayKey = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const today = () => dayKey(new Date());
+const parseDay = s => new Date(s + 'T12:00:00');
+const fmtDay = s => new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(parseDay(s));
+const fmtMonth = s => new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(parseDay(s + '-15'));
+
+const CATALOGO = [
+  ['Papas y fritos','Aros de Cebolla','un','800001'],
+  ['Papas y fritos','Cheese Pillows','un','1000152'],
+  ['Papas y fritos','Chicken Fries x 1300 Uni','un','1000219'],
+  ['Papas y fritos','Papas Farm Frites','kg','800045'],
+  ['Bebidas','Cachantun Gas','un','1000121'],
+  ['Bebidas','Cachantun Sin Gas','un','1000122'],
+  ['Bebidas','Jarabe 7UP 19 Lts','caja','1000119'],
+  ['Bebidas','Jarabe Bilz 19 Lts','caja','1000125'],
+  ['Bebidas','Jarabe Crush 19 Lts','caja','1000118'],
+  ['Bebidas','Jarabe Kem 19 Lts','caja','1000120'],
+  ['Bebidas','Jarabe Pap 19 Lts','caja','1000126'],
+  ['Bebidas','Jarabe Pepsi 19 Lts','caja','1000117'],
+  ['Bebidas','Jarabe Pepsi Zero 19 Lts','caja','1000144'],
+  ['Bebidas','Jugo Watss NLight','un','1000222'],
+  ['Bebidas','Lata Crush','un','1000147'],
+  ['Bebidas','Lata Kem','un','1000135'],
+  ['Bebidas','Lata Pepsi 350 cc','un','1000136'],
+  ['Bebidas','Lata Pepsi Zero','un','1000145'],
+  ['Bebidas','Redbull Lata 250cc x24','un','800016'],
+  ['Bebidas','Redbull Sugar Free Lata','un','800017'],
+  ['Bebidas','Redbull Yellow Lata 250cc','un','800018'],
+  ['Verduras','Cebolla Bolsa','bolsa','1000036'],
+  ['Verduras','Lechuga Procesada Bolsa','bolsa','1000038'],
+  ['Verduras','Lechuga Variedad 500 Gr','un','1000057'],
+  ['Verduras','Palta Procesada','kg','1100009'],
+  ['Verduras','Rucula Pre Elaborada','un','1000064'],
+  ['Verduras','Tomate','kg','1000037'],
+  ['Carnes','Chicken Patty','un','800003'],
+  ['Carnes','Chicken Patty Vegetal','un','800011'],
+  ['Carnes','H. Steakhouse XT 7oz','un','1020340'],
+  ['Carnes','Mega Patty','un','800041'],
+  ['Carnes','Nuggets','un','800006'],
+  ['Carnes','Nuggets Vegetal','un','800010'],
+  ['Carnes','Pollo JR 1x256 Un','un','1100013'],
+  ['Carnes','Rebel Patty','un','1000149'],
+  ['Carnes','Whopper Patty','un','800020'],
+  ['Carnes','Tocino','un','900045'],
+  ['Lácteos','Queso Cheddar 1x18.16','un','900027'],
+  ['Pan','Pan Especiales 24 Un','un','1000151'],
+  ['Pan','Pan Hamburguesa 30 Un','un','1000150'],
+  ['Pan','Pan Masa Madre 20Ux9','un','1000154'],
+  ['Pan','Pan Papas 20 Unds x 9','un','1020339'],
+  ['Pan','Pan Whopper congelado sésamo','un','1020343'],
+  ['Pan','Pan Whopper 20 Un','un','1000048'],
+  ['Pan','Pan Whopper Queso','un','1000071'],
+  ['Pan','Medialunas 40 x24U','un','1100222'],
+  ['Postres','Chocorisimo Dulce','un','800073'],
+  ['Postres','Compota Manzana','un','1000221'],
+  ['Postres','Donut Sabor Fresa','un','1100216'],
+  ['Postres','Donut Tricolor x 36','un','1100218'],
+  ['Postres','Empanada de Queso','un','800051'],
+  ['Postres','Muffin Tulipe Choc','un','1100219'],
+  ['Postres','Pie Chocolate x 48 Un','un','800025'],
+  ['Postres','Pie de Manzana','un','800014'],
+  ['Otros','Premium Genérico','un','100000'],
+  ['Otros','Mezcla Premium Bocado','kg','900046'],
+  ['Otros','Vaso Cerámica','un','1100256']
+];
+
+const S = { items: new Map(), usage: new Map(), tab: 'inv', q: '', mode: 'day', itemsReady: false, usageReady: false, readOnly: false, db: null };
+
+// cola de escrituras: una a la vez
+let chain = Promise.resolve();
+const queue = fn => { const p = chain.then(fn); chain = p.catch(() => {}); return p; };
+
+let toastT;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3200);
+}
+
+function threshold(it) { return it.min > 0 ? it.min : (it.par > 0 ? it.par * 0.5 : null); }
+function needs(it) { const t = threshold(it); return t != null && (it.stock || 0) <= t; }
+function orderQty(it) { return it.par > 0 ? Math.max(0, r2(it.par - (it.stock || 0))) : null; }
+function sortedItems() {
+  return [...S.items.values()].sort((a, b) => (a.cat || '').localeCompare(b.cat || '', 'es') || (a.name || '').localeCompare(b.name || '', 'es'));
+}
+function avgUse(id) {
+  const cutoff = dayKey(new Date(Date.now() - 30 * 864e5));
+  let sum = 0, first = null;
+  for (const [d, u] of S.usage) {
+    if (d >= cutoff) { const q = (u.used || {})[id]; if (q) { sum += q; if (!first || d < first) first = d; } }
+  }
+  if (!sum) return 0;
+  const span = Math.max(7, Math.round((Date.now() - parseDay(first)) / 864e5) + 1);
+  return sum / span;
+}
+const itemName = id => (S.items.get(id) || {}).name || '(producto eliminado)';
+const itemUnit = id => (S.items.get(id) || {}).unit || '';
+
+// ---------- escrituras ----------
+async function applyMove(item, mode, qty) {
+  const id = item.id, cur = item.stock || 0;
+  const out = mode === 'uso' || mode === 'merma';
+  let next = out ? cur - qty : mode === 'recibo' ? cur + qty : qty;
+  next = Math.max(0, r2(next));
+  await S.db.doc('items/' + id).update({ stock: next, updated: Date.now() });
+  const ref = S.db.doc('usage/' + today());
+  const snap = await ref.get();
+  const base = { day: today(), used: {}, received: {}, waste: {}, counted: {} };
+  if (mode === 'conteo') {
+    const patch = { counted: { [id]: { real: next, diff: r2(next - cur) } } };
+    if (snap.exists) await ref.update(patch); else await ref.set({ ...base, ...patch });
+    return;
+  }
+  const key = mode === 'uso' ? 'used' : mode === 'recibo' ? 'received' : 'waste';
+  if (snap.exists) {
+    const prev = ((snap.data()[key] || {})[id]) || 0;
+    await ref.update({ [key]: { [id]: r2(prev + qty) } });
+  } else {
+    await ref.set({ ...base, [key]: { [id]: qty } });
+  }
+}
+async function saveItem(item, data) {
+  if (item) await S.db.doc('items/' + item.id).update({ ...data, updated: Date.now() });
+  else { const ref = S.db.collection('items').doc(); await ref.set({ ...data, stock: 0, created: Date.now(), updated: Date.now() }); }
+}
+async function seed() {
+  for (const [cat, name, unit, code] of CATALOGO) {
+    await S.db.collection('items').doc().set({ cat, name, unit, code, stock: 0, min: 0, par: 0, created: Date.now(), updated: Date.now() });
+  }
+}
+
+// ---------- hoja inferior ----------
+function closeSheet() { const sh = $('#sheet'); sh.hidden = true; sh.replaceChildren(); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
+
+function openSheet(item, start) {
+  if (S.readOnly) { toast('Tienes acceso solo de lectura. Pide permiso de edición para anotar.'); return; }
+  const sh = $('#sheet'); sh.replaceChildren(); sh.hidden = false;
+  sh.onclick = e => { if (e.target === sh) closeSheet(); };
+  const panel = el('div', { class: 'panel', role: 'dialog', 'aria-modal': 'true' });
+  sh.append(panel);
+  const show = which => { panel.replaceChildren(); (which === 'mov' ? movPanel : editPanel)(); };
+
+  function movPanel() {
+    let mode = 'uso', qty = '';
+    const unit = item.unit || '';
+    const input = el('input', { id: 'qty', type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: '0' });
+    const prev = el('p', { class: 'preview' });
+    const save = el('button', { class: 'btn primary', text: 'Guardar' });
+    const modes = { uso: 'Usé', recibo: 'Recibí', merma: 'Merma', conteo: 'Conté' };
+    const seg = el('div', { class: 'seg', role: 'tablist' });
+    const upd = () => {
+      const q = parseFloat(input.value);
+      const cur = item.stock || 0;
+      const ok = q >= 0 && !isNaN(q);
+      const next = !ok ? null : Math.max(0, r2(mode === 'uso' || mode === 'merma' ? cur - q : mode === 'recibo' ? cur + q : q));
+      prev.replaceChildren('Ahora hay ', el('b', { text: fmt(cur) + ' ' + unit }), next != null ? [' · quedará en ', el('b', { text: fmt(next) + ' ' + unit })] : '');
+      save.disabled = !ok || (mode !== 'conteo' && q === 0);
+      seg.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.m === mode));
+    };
+    for (const m in modes) seg.append(el('button', { class: 'tab', 'data-m': m, text: modes[m], onclick: () => { mode = m; upd(); } }));
+    const chips = el('div', { class: 'chips' }, [1, 5, 10, 20].map(n => el('button', { class: 'btn', text: '+' + n, onclick: () => { input.value = r2((parseFloat(input.value) || 0) + n); upd(); } })));
+    input.addEventListener('input', upd);
+    save.addEventListener('click', () => {
+      const q = parseFloat(input.value);
+      save.disabled = true;
+      queue(() => applyMove(item, mode, q)).then(() => { toast(modes[mode] + ' ' + fmt(q) + ' ' + unit + ' de ' + item.name); closeSheet(); })
+        .catch(() => { toast('No se pudo guardar. Intenta de nuevo.'); upd(); });
+    });
+    panel.append(
+      el('h2', { text: item.name }),
+      el('p', { class: 'note', text: (item.cat || 'Sin categoría') + ' · se anota en el día de hoy' }),
+      seg,
+      el('div', { class: 'field' }, el('label', { for: 'qty', text: 'Cantidad (' + (unit || 'unidades') + ')' }), input),
+      chips, prev,
+      el('div', { class: 'bar' }, el('button', { class: 'btn', text: 'Editar producto', onclick: () => show('edit') }), save)
+    );
+    upd();
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function editPanel() {
+    const cats = [...new Set([...S.items.values()].map(i => i.cat).filter(Boolean))].sort();
+    const f = (id, label, props) => el('div', { class: 'field' }, el('label', { for: id, text: label }), el('input', { id, ...props }));
+    const name = f('f-name', 'Producto', { type: 'text', value: item ? item.name : '' });
+    const cat = f('f-cat', 'Categoría', { type: 'text', list: 'cats', value: item ? (item.cat || '') : '' });
+    const unit = f('f-unit', 'Unidad (un, kg, caja…)', { type: 'text', value: item ? (item.unit || '') : 'un' });
+    const min = f('f-min', 'Pedir cuando baje de', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', value: item ? (item.min || 0) : 0 });
+    const par = f('f-par', 'Stock ideal', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', value: item ? (item.par || 0) : 0 });
+    const dl = el('datalist', { id: 'cats' }, cats.map(c => el('option', { value: c })));
+    const save = el('button', { class: 'btn primary', text: 'Guardar', onclick: () => {
+      const data = { name: name.querySelector('input').value.trim(), cat: cat.querySelector('input').value.trim(), unit: unit.querySelector('input').value.trim(),
+        min: Math.max(0, parseFloat(min.querySelector('input').value) || 0), par: Math.max(0, parseFloat(par.querySelector('input').value) || 0) };
+      if (!data.name) { toast('Escribe el nombre del producto.'); return; }
+      save.disabled = true;
+      queue(() => saveItem(item, data)).then(() => { toast('Guardado'); closeSheet(); }).catch(() => { toast('No se pudo guardar.'); save.disabled = false; });
+    } });
+    const del = el('button', { class: 'btn danger', text: 'Eliminar' });
+    let armed = false;
+    del.addEventListener('click', () => {
+      if (!armed) { armed = true; del.textContent = 'Toca otra vez para eliminar'; return; }
+      queue(() => S.db.doc('items/' + item.id).delete()).then(() => { toast('Producto eliminado'); closeSheet(); }).catch(() => toast('No se pudo eliminar.'));
+    });
+    panel.append(
+      el('h2', { text: item ? 'Editar producto' : 'Nuevo producto' }), dl, name, cat,
+      el('div', { class: 'two' }, unit, el('div')),
+      el('div', { class: 'two' }, min, par),
+      el('p', { class: 'note', text: 'El pedido sugiere comprar hasta el stock ideal cuando el stock baja del mínimo.' }),
+      el('div', { class: 'bar' }, item ? el('button', { class: 'btn', text: 'Volver', onclick: () => show('mov') }) : el('button', { class: 'btn', text: 'Cancelar', onclick: closeSheet }), save),
+      item ? del : null
+    );
+    setTimeout(() => (item ? null : name.querySelector('input').focus()), 50);
+  }
+  show(start || (item ? 'mov' : 'edit'));
+}
+
+// ---------- vistas ----------
+function renderList() {
+  const box = $('#list'); if (!box) return;
+  box.replaceChildren();
+  const q = S.q.trim().toLowerCase();
+  const groups = new Map();
+  for (const it of sortedItems()) {
+    if (q && !((it.name || '').toLowerCase().includes(q) || (it.cat || '').toLowerCase().includes(q))) continue;
+    const c = it.cat || 'Sin categoría';
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(it);
+  }
+  if (!groups.size) { box.append(el('p', { class: 'note', text: 'Ningún producto coincide con la búsqueda.' })); return; }
+  for (const [c, list] of groups) {
+    box.append(el('section', { class: 'group' }, el('h2', { text: c }), list.map(it => {
+      const avg = avgUse(it.id);
+      const sub = (it.code ? it.code + ' · ' : '') + (avg > 0 ? 'Usa ~' + fmt(avg) + ' ' + (it.unit || '') + '/día · alcanza ~' + Math.floor((it.stock || 0) / avg) + ' d' : 'Sin consumo registrado');
+      const t = threshold(it);
+      const pill = t == null ? null : (needs(it) ? el('span', { class: 'pill pedir', text: 'Pedir' }) : el('span', { class: 'pill ok', text: 'OK' }));
+      return el('button', { class: 'row', onclick: () => openSheet(it) },
+        el('span', { class: 'name' }, el('b', { text: it.name }), el('small', { text: sub })),
+        pill,
+        el('span', { class: 'qty' }, fmt(it.stock || 0), el('small', { text: it.unit || '' })));
+    })));
+  }
+}
+
+function renderInv() {
+  const v = $('#view'); v.replaceChildren();
+  if (!S.itemsReady) { v.append(el('p', { class: 'note', text: 'Cargando productos…' })); return; }
+  if (S.items.size === 0) {
+    const seedBtn = el('button', { class: 'btn primary', text: 'Cargar productos del reporte 543', onclick: () => {
+      if (S.readOnly) { toast('Tienes acceso solo de lectura.'); return; }
+      seedBtn.disabled = true; seedBtn.textContent = 'Cargando…';
+      queue(seed).catch(() => toast('No se pudo cargar el catálogo.'));
+    } });
+    v.append(el('div', { class: 'empty' },
+      el('h2', { text: 'Aún no hay productos' }),
+      el('p', { class: 'note', text: 'Carga los 57 productos del reporte 543, con sus códigos, y ajusta unidades, mínimos y stock ideal. También puedes agregar productos uno por uno.' }),
+      seedBtn,
+      el('button', { class: 'btn', text: '+ Agregar producto', onclick: () => openSheet(null) }),
+      el('button', { class: 'btn', text: 'Importar respaldo', onclick: importBackup })));
+    return;
+  }
+  v.append(
+    el('div', { class: 'bar' },
+      el('input', { id: 'search', type: 'search', placeholder: 'Buscar producto', value: S.q, 'aria-label': 'Buscar producto', oninput: e => { S.q = e.target.value; renderList(); } }),
+      el('button', { class: 'btn primary', text: '+ Producto', onclick: () => openSheet(null) })),
+    el('div', { id: 'list', style: 'display:flex;flex-direction:column;gap:14px' }),
+    el('div', { class: 'bar' }, el('button', { class: 'btn', text: 'Exportar respaldo', onclick: exportBackup }), el('button', { class: 'btn', text: 'Importar respaldo', onclick: importBackup })),
+    el('p', { class: 'note', text: 'Los datos están solo en este celular. Exporta un respaldo de vez en cuando.' }));
+  renderList();
+}
+
+function renderPed() {
+  const v = $('#view'); v.replaceChildren();
+  if (!S.itemsReady) { v.append(el('p', { class: 'note', text: 'Cargando…' })); return; }
+  const todo = sortedItems().filter(needs);
+  const untracked = [...S.items.values()].filter(i => threshold(i) == null).length;
+  if (!todo.length) {
+    v.append(el('div', { class: 'empty' }, el('h2', { text: 'Nada que pedir' }),
+      el('p', { class: 'note', text: S.items.size ? 'Ningún producto está bajo su mínimo.' : 'Agrega productos en Inventario.' })));
+  } else {
+    const lines = todo.map(it => { const q = orderQty(it); return '- ' + it.name + ': ' + (q != null ? fmt(q) + ' ' + (it.unit || '') : 'revisar cantidad'); });
+    const text = 'Pedido BK ' + new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long' }).format(new Date()) + '\n' + lines.join('\n');
+    const out = el('pre', { class: 'out', text });
+    const copy = el('button', { class: 'btn primary', text: 'Copiar pedido', onclick: async () => {
+      try { await navigator.clipboard.writeText(text); toast('Pedido copiado'); }
+      catch (e) { const r = document.createRange(); r.selectNodeContents(out); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selecciona y copia el texto'); }
+    } });
+    const groups = new Map();
+    for (const it of todo) { const c = it.cat || 'Sin categoría'; if (!groups.has(c)) groups.set(c, []); groups.get(c).push(it); }
+    v.append(el('p', { class: 'note', text: todo.length + (todo.length === 1 ? ' producto bajo su mínimo' : ' productos bajo su mínimo') }));
+    for (const [c, list] of groups) {
+      v.append(el('section', { class: 'group' }, el('h2', { text: c }), list.map(it => {
+        const q = orderQty(it);
+        return el('button', { class: 'row', onclick: () => openSheet(it) },
+          el('span', { class: 'name' }, el('b', { text: it.name }), el('small', { text: 'Hay ' + fmt(it.stock || 0) + ' ' + (it.unit || '') + ' · mínimo ' + fmt(threshold(it)) })),
+          el('span', { class: 'qty' }, q != null ? '+' + fmt(q) : '?', el('small', { text: it.unit || '' })));
+      })));
+    }
+    v.append(copy, out);
+  }
+  if (untracked) v.append(el('p', { class: 'note', text: untracked + ' productos no tienen mínimo ni stock ideal y no entran al pedido. Ábrelos en Inventario y toca «Editar producto».' }));
+}
+
+function renderCon() {
+  const v = $('#view'); v.replaceChildren();
+  const seg = el('div', { class: 'seg' },
+    el('button', { class: 'tab', 'aria-selected': S.mode === 'day', text: 'Diario', onclick: () => { S.mode = 'day'; renderCon(); } }),
+    el('button', { class: 'tab', 'aria-selected': S.mode === 'month', text: 'Mensual', onclick: () => { S.mode = 'month'; renderCon(); } }));
+  v.append(seg);
+  if (!S.usageReady) { v.append(el('p', { class: 'note', text: 'Cargando consumo…' })); return; }
+  const days = [...S.usage.values()].sort((a, b) => b.day.localeCompare(a.day));
+  if (!days.length) { v.append(el('div', { class: 'empty' }, el('h2', { text: 'Sin consumo todavía' }), el('p', { class: 'note', text: 'Cuando anotes «Usé» o «Recibí» en un producto, el día aparece aquí.' }))); return; }
+  const lineFor = (id, q) => el('div', { class: 'line' }, el('span', { text: itemName(id) }), el('span', { text: fmt(q) + ' ' + itemUnit(id) }));
+  if (S.mode === 'day') {
+    for (const d of days.slice(0, 31)) {
+      const used = Object.entries(d.used || {}).sort((a, b) => b[1] - a[1]);
+      const rec = Object.entries(d.received || {}).sort((a, b) => b[1] - a[1]);
+      const wst = Object.entries(d.waste || {}).sort((a, b) => b[1] - a[1]);
+      const cnt = Object.entries(d.counted || {});
+      v.append(el('div', { class: 'card' }, el('h3', { text: fmtDay(d.day) }),
+        used.length ? [el('span', { class: 'note', text: 'Usado' }), used.map(([id, q]) => lineFor(id, q))] : el('span', { class: 'note', text: 'Sin consumo anotado' }),
+        rec.length ? [el('span', { class: 'note', text: 'Recibido' }), rec.map(([id, q]) => lineFor(id, q))] : null,
+        wst.length ? [el('span', { class: 'note', text: 'Merma' }), wst.map(([id, q]) => lineFor(id, q))] : null,
+        cnt.length ? [el('span', { class: 'note', text: 'Conteo real (diferencia)' }), cnt.map(([id, c]) => el('div', { class: 'line' }, el('span', { text: itemName(id) }), el('span', { text: fmt(c.real) + ' ' + itemUnit(id) + (c.diff ? ' (' + (c.diff > 0 ? '+' : '') + fmt(c.diff) + ')' : '') })))] : null));
+    }
+  } else {
+    const months = new Map();
+    for (const d of days) {
+      const m = d.day.slice(0, 7);
+      if (!months.has(m)) months.set(m, { used: {}, days: 0 });
+      const o = months.get(m); o.days++;
+      for (const id in (d.used || {})) o.used[id] = r2((o.used[id] || 0) + d.used[id]);
+    }
+    for (const [m, o] of [...months].sort((a, b) => b[0].localeCompare(a[0]))) {
+      const rows = Object.entries(o.used).sort((a, b) => b[1] - a[1]);
+      const now = new Date();
+      const span = m === dayKey(now).slice(0, 7) ? now.getDate() : new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate();
+      const max = rows.length ? rows[0][1] : 1;
+      v.append(el('div', { class: 'card' }, el('h3', { text: fmtMonth(m) }),
+        el('span', { class: 'note', text: o.days + (o.days === 1 ? ' día con registro' : ' días con registro') }),
+        rows.length ? rows.map(([id, q]) => el('div', { style: 'display:flex;flex-direction:column;gap:4px' },
+          el('div', { class: 'line' }, el('span', { text: itemName(id) }), el('span', { text: fmt(q) + ' ' + itemUnit(id) + ' · ' + fmt(q / span) + '/día' })),
+          el('div', { class: 'meter' }, el('i', { style: 'width:' + Math.max(3, q / max * 100) + '%' })))) : el('span', { class: 'note', text: 'Sin consumo anotado' })));
+    }
+  }
+}
+
+function updateChrome() {
+  const n = [...S.items.values()].filter(needs).length;
+  const b = $('#pedBadge'); b.hidden = !n; b.textContent = n;
+  $('#sub').textContent = (S.itemsReady ? S.items.size + ' productos' : 'Conectando…') + (n ? ' · ' + n + ' para pedir' : '') + ' · ' + new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()) + (S.readOnly ? ' · solo lectura' : '');
+  document.querySelectorAll('#tabs .tab').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === S.tab));
+}
+function render() {
+  updateChrome();
+  (S.tab === 'inv' ? renderInv : S.tab === 'ped' ? renderPed : renderCon)();
+}
+function refresh() {
+  updateChrome();
+  if (S.tab === 'inv' && $('#list') && S.items.size) renderList(); else render();
+}
+document.querySelectorAll('#tabs .tab').forEach(t => t.addEventListener('click', () => { S.tab = t.dataset.tab; render(); window.scrollTo(0, 0); }));
+
+render();
+
+// ---------- conexión ----------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+const KEY = 'bk-inv-v1';
+let DATA = null;
+try { DATA = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+if (!DATA || typeof DATA !== 'object') DATA = {};
+DATA.items = DATA.items || {}; DATA.usage = DATA.usage || {};
+const listeners = new Set();
+const save = () => {
+  try { localStorage.setItem(KEY, JSON.stringify(DATA)); } catch (e) { toast('No se pudo guardar en el celular. Revisa el espacio disponible.'); }
+  listeners.forEach(f => f());
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+const merge = (a, b) => { for (const k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) a[k] = merge(a[k] && typeof a[k] === 'object' ? a[k] : {}, b[k]); else a[k] = b[k]; } return a; };
+const snapDoc = (id, d) => ({ id, exists: d !== undefined, data: () => d === undefined ? undefined : clone(d) });
+const colObj = n => DATA[n] || (DATA[n] = {});
+const newId = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36);
+function docRef(path) {
+  const [c, id] = path.split('/');
+  return {
+    id, path,
+    get: async () => snapDoc(id, colObj(c)[id]),
+    set: async d => { colObj(c)[id] = clone(d); save(); },
+    update: async d => { const cur = colObj(c)[id]; if (cur === undefined) throw new Error('missing'); merge(cur, clone(d)); save(); },
+    delete: async () => { delete colObj(c)[id]; save(); }
+  };
+}
+function query(c, ord, lim) {
+  return {
+    orderBy: (f, dir) => query(c, [f, dir || 'asc'], lim),
+    limit: n => query(c, ord, n),
+    onSnapshot: next => {
+      const fire = () => {
+        let docs = Object.entries(colObj(c)).map(([id, d]) => snapDoc(id, d));
+        if (ord) { const [f, dir] = ord; docs.sort((a, b) => { const x = a.data()[f], y = b.data()[f]; return (x > y ? 1 : x < y ? -1 : 0) * (dir === 'desc' ? -1 : 1); }); }
+        if (lim) docs = docs.slice(0, lim);
+        next({ docs, size: docs.length, empty: !docs.length });
+      };
+      listeners.add(fire); fire();
+      return () => listeners.delete(fire);
+    }
+  };
+}
+const db = { doc: docRef, collection: c => ({ ...query(c), doc: id => docRef(c + '/' + (id || newId())) }) };
+S.db = db;
+function exportBackup() {
+  const blob = new Blob([JSON.stringify(DATA)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'inventario-bk-' + today() + '.json';
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('Respaldo exportado');
+}
+function importBackup() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json';
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    try {
+      const o = JSON.parse(await f.text());
+      if (!o || typeof o.items !== 'object' || typeof o.usage !== 'object') throw new Error('bad');
+      DATA = o; save(); toast('Respaldo cargado');
+    } catch (e) { toast('El archivo no es un respaldo válido.'); }
+  });
+  inp.click();
+}
+const fail = () => { $('#sub').textContent = 'No se pudo leer la base'; };
+db.collection('items').onSnapshot(s => {
+  S.items = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+  S.itemsReady = true; refresh();
+}, fail);
+db.collection('usage').orderBy('day', 'desc').limit(400).onSnapshot(s => {
+  S.usage = new Map(s.docs.map(d => [d.id, d.data()]));
+  S.usageReady = true; refresh();
+}, fail);
+})();
+</script>
+</body>
+</html>
