@@ -317,10 +317,11 @@ function openSheet(item, start) {
     const unit = f('f-unit', 'Unidad (un, kg, caja…)', { type: 'text', value: item ? (item.unit || '') : 'un' });
     const min = f('f-min', 'Pedir cuando baje de', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', value: item ? (item.min || 0) : 0 });
     const par = f('f-par', 'Stock ideal', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', value: item ? (item.par || 0) : 0 });
+    const men = f('f-men', 'Consumo mensual (opcional)', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', value: item ? (item.mensual || 0) : 0 });
     const dl = el('datalist', { id: 'cats' }, cats.map(c => el('option', { value: c })));
     const save = el('button', { class: 'btn primary', text: 'Guardar', onclick: () => {
       const data = { name: name.querySelector('input').value.trim(), cat: cat.querySelector('input').value.trim(), unit: unit.querySelector('input').value.trim(),
-        min: Math.max(0, parseFloat(min.querySelector('input').value) || 0), par: Math.max(0, parseFloat(par.querySelector('input').value) || 0) };
+        min: Math.max(0, parseFloat(min.querySelector('input').value) || 0), par: Math.max(0, parseFloat(par.querySelector('input').value) || 0), mensual: Math.max(0, parseFloat(men.querySelector('input').value) || 0) };
       if (!data.name) { toast('Escribe el nombre del producto.'); return; }
       save.disabled = true;
       queue(() => saveItem(item, data)).then(() => { toast('Guardado'); closeSheet(); }).catch(() => { toast('No se pudo guardar.'); save.disabled = false; });
@@ -335,6 +336,7 @@ function openSheet(item, start) {
       el('h2', { text: item ? 'Editar producto' : 'Nuevo producto' }), dl, name, cat,
       el('div', { class: 'two' }, unit, el('div')),
       el('div', { class: 'two' }, min, par),
+      el('div', { class: 'two' }, men, el('div')),
       el('p', { class: 'note', text: 'El pedido sugiere comprar hasta el stock ideal cuando el stock baja del mínimo.' }),
       el('div', { class: 'bar' }, item ? el('button', { class: 'btn', text: 'Volver', onclick: () => show('mov') }) : el('button', { class: 'btn', text: 'Cancelar', onclick: closeSheet }), save),
       item ? del : null
@@ -398,36 +400,72 @@ function renderInv() {
   renderList();
 }
 
+// ---------- pedido inteligente (basado en la planilla de pedidos) ----------
+const MENSUAL = {"Aros de Cebolla": 18.06, "Cheese Pillows": 6.03, "Chicken Fries x 1300 Uni": 1.4, "Papas Farm Frites": 3324.0, "Cachantun Gas": 11, "Cachantun Sin Gas": 25.33, "Jarabe 7UP 19 Lts": 5.85, "Jarabe Bilz 19 Lts": 4.2, "Jarabe Crush 19 Lts": 2.9, "Jarabe Kem 19 Lts": 4.49, "Jarabe Pap 19 Lts": 2.02, "Jarabe Pepsi 19 Lts": 18.06, "Jarabe Pepsi Zero 19 Lts": 9.12, "Jugo Watss NLight": 18.97, "Lata Crush": 4.21, "Lata Kem": 18.16, "Lata Pepsi 350 cc": 26.29, "Lata Pepsi Zero": 16.16, "Redbull Lata 250cc x24": 2.46, "Cebolla Bolsa": 65.5, "Lechuga Procesada Bolsa": 108.5, "Lechuga Variedad 500 Gr": 21, "Palta Procesada": 45.0, "Tomate": 520.0, "Chicken Patty": 9.39, "H. Steakhouse XT 7oz": 9.93, "Mega Patty": 25.39, "Nuggets": 10.05, "Pollo JR 1x256 Un": 0.84, "Rebel Patty": 12.82, "Whopper Patty": 127.9, "Tocino": 8.79, "Queso Cheddar 1x18.16": 21.24, "Pan Especiales 24 Un": 64, "Pan Hamburguesa 30 Un": 166.86, "Pan Whopper congelado sésamo": 6.71, "Pan Whopper 20 Un": 524.95, "Medialunas 40 x24U": 3.29, "Compota Manzana": 7.54, "Empanada de Queso": 30.38, "Pie Chocolate x 48 Un": 6.71, "Pie de Manzana": 0.92, "Mezcla Premium Bocado": 154.7};
+const CFG_KEY = 'bk-ped-cfg';
+let CFG = { ciclo: 7, prov: {} };
+try { Object.assign(CFG, JSON.parse(localStorage.getItem(CFG_KEY)) || {}); } catch (e) {}
+const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); } catch (e) {} };
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const PROVS = ['CCU', 'Bantu', 'Girasoles', 'Ideal', 'Bodega'];
+function provOf(it) {
+  const n = it.name || '';
+  if (it.cat === 'Bebidas') return 'CCU';
+  if (/^(Cebolla Bolsa|Tomate)/i.test(n)) return 'Bantu';
+  if (/^Lechuga/i.test(n)) return 'Girasoles';
+  if (/^Pan (Especiales|Hamburguesa|Whopper 20)/i.test(n)) return 'Ideal';
+  return 'Bodega';
+}
+function lead(p) { const c = CFG.prov[p] || {}; return c.pide == null || c.llega == null ? 0 : (c.llega - c.pide + 7) % 7; }
+function dailyUse(it) { return it.mensual > 0 ? it.mensual / 30 : avgUse(it.id); }
+function autoQty(it) { const d = dailyUse(it); if (!d) return null; return Math.max(0, Math.ceil(r2(d * (lead(provOf(it)) + CFG.ciclo + 1) - (it.stock || 0)))); }
+function plan() {
+  return sortedItems().map(it => { const a = autoQty(it); return { it, a: a != null, q: a != null ? a : orderQty(it) }; })
+    .filter(r => r.a ? r.q > 0 : needs(r.it));
+}
+async function loadMensual() {
+  let n = 0;
+  for (const it of S.items.values()) {
+    const m = MENSUAL[it.name];
+    if (m > 0 && it.mensual !== m) { await queue(() => S.db.doc('items/' + it.id).update({ mensual: m, updated: Date.now() })); n++; }
+  }
+  toast(n + ' productos con consumo cargado');
+}
 function renderPed() {
   const v = $('#view'); v.replaceChildren();
   if (!S.itemsReady) { v.append(el('p', { class: 'note', text: 'Cargando…' })); return; }
-  const todo = sortedItems().filter(needs);
-  const untracked = [...S.items.values()].filter(i => threshold(i) == null).length;
-  if (!todo.length) {
-    v.append(el('div', { class: 'empty' }, el('h2', { text: 'Nada que pedir' }),
-      el('p', { class: 'note', text: S.items.size ? 'Ningún producto está bajo su mínimo.' : 'Agrega productos en Inventario.' })));
+  const rows = plan();
+  const sel = (val, on) => { const s = el('select', {}, el('option', { value: '', text: '—' }), DIAS.map((d, i) => el('option', { value: String(i), text: d }))); s.value = val == null ? '' : String(val); s.addEventListener('change', () => on(s.value === '' ? null : +s.value)); return s; };
+  const setP = (p, k, x) => { CFG.prov[p] = { ...(CFG.prov[p] || {}), [k]: x }; saveCfg(); render(); };
+  const ciclo = el('input', { type: 'number', inputmode: 'numeric', min: '1', value: CFG.ciclo });
+  ciclo.addEventListener('change', () => { CFG.ciclo = Math.max(1, Math.round(+ciclo.value) || 7); saveCfg(); render(); });
+  const cfg = el('details', {}, el('summary', { text: 'Días de pedido y cobertura' }),
+    el('div', { class: 'field' }, el('label', { text: 'Ciclo: cada cuántos días llega un pedido' }), ciclo),
+    PROVS.map(p => { const c = CFG.prov[p] || {}; return el('div', { class: 'field' }, el('label', { text: p + ': pide → llega' }), el('div', { class: 'two' }, sel(c.pide, x => setP(p, 'pide', x)), sel(c.llega, x => setP(p, 'llega', x)))); }),
+    el('p', { class: 'note', text: 'Cantidad = consumo diario × (días hasta que llega + ciclo + 1 de margen) − stock actual, redondeado hacia arriba.' }),
+    el('button', { class: 'btn', text: 'Cargar consumo mensual del Excel', onclick: loadMensual }));
+  if (S.cfgOpen) cfg.open = true;
+  cfg.addEventListener('toggle', () => { S.cfgOpen = cfg.open; });
+  v.append(cfg);
+  if (!rows.length) {
+    v.append(el('div', { class: 'empty' }, el('h2', { text: 'Nada que pedir' }), el('p', { class: 'note', text: S.items.size ? 'Con el stock y consumo actuales no hace falta pedir.' : 'Agrega productos en Inventario.' })));
   } else {
-    const lines = todo.map(it => { const q = orderQty(it); return '- ' + it.name + ': ' + (q != null ? fmt(q) + ' ' + (it.unit || '') : 'revisar cantidad'); });
-    const text = 'Pedido BK ' + new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long' }).format(new Date()) + '\n' + lines.join('\n');
-    const out = el('pre', { class: 'out', text });
-    const copy = el('button', { class: 'btn primary', text: 'Copiar pedido', onclick: async () => {
-      try { await navigator.clipboard.writeText(text); toast('Pedido copiado'); }
-      catch (e) { const r = document.createRange(); r.selectNodeContents(out); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast('Selecciona y copia el texto'); }
-    } });
-    const groups = new Map();
-    for (const it of todo) { const c = it.cat || 'Sin categoría'; if (!groups.has(c)) groups.set(c, []); groups.get(c).push(it); }
-    v.append(el('p', { class: 'note', text: todo.length + (todo.length === 1 ? ' producto bajo su mínimo' : ' productos bajo su mínimo') }));
-    for (const [c, list] of groups) {
-      v.append(el('section', { class: 'group' }, el('h2', { text: c }), list.map(it => {
-        const q = orderQty(it);
-        return el('button', { class: 'row', onclick: () => openSheet(it) },
-          el('span', { class: 'name' }, el('b', { text: it.name }), el('small', { text: 'Hay ' + fmt(it.stock || 0) + ' ' + (it.unit || '') + ' · mínimo ' + fmt(threshold(it)) })),
-          el('span', { class: 'qty' }, q != null ? '+' + fmt(q) : '?', el('small', { text: it.unit || '' })));
-      })));
+    v.append(el('p', { class: 'note', text: rows.length + (rows.length === 1 ? ' producto para pedir' : ' productos para pedir') }));
+    const date = new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long' }).format(new Date());
+    for (const p of PROVS) {
+      const list = rows.filter(r => provOf(r.it) === p); if (!list.length) continue;
+      const c = CFG.prov[p] || {};
+      const when = c.pide != null && c.llega != null ? ' · pide ' + DIAS[c.pide].toLowerCase() + ', llega ' + DIAS[c.llega].toLowerCase() : '';
+      const text = 'Pedido ' + p + ' ' + date + '\n' + list.map(r => '- ' + r.it.name + ': ' + (r.q != null ? fmt(r.q) + ' ' + (r.it.unit || '') : 'revisar cantidad')).join('\n');
+      v.append(el('section', { class: 'group' }, el('h2', { text: p + when }),
+        list.map(r => el('button', { class: 'row', onclick: () => openSheet(r.it) },
+          el('span', { class: 'name' }, el('b', { text: r.it.name }), el('small', { text: 'Hay ' + fmt(r.it.stock || 0) + ' ' + (r.it.unit || '') + (r.a ? ' · usa ~' + fmt(dailyUse(r.it)) + ' por día' : ' · mínimo ' + fmt(threshold(r.it))) })),
+          el('span', { class: 'qty' }, r.q != null ? '+' + fmt(r.q) : '?', el('small', { text: r.it.unit || '' })))),
+        el('button', { class: 'btn primary', text: 'Copiar pedido ' + p, onclick: async () => { try { await navigator.clipboard.writeText(text); toast('Pedido copiado'); } catch (e) { toast('No se pudo copiar'); } } })));
     }
-    v.append(copy, out);
   }
-  if (untracked) v.append(el('p', { class: 'note', text: untracked + ' productos no tienen mínimo ni stock ideal y no entran al pedido. Ábrelos en Inventario y toca «Editar producto».' }));
+  const untracked = [...S.items.values()].filter(i => dailyUse(i) === 0 && threshold(i) == null).length;
+  if (untracked) v.append(el('p', { class: 'note', text: untracked + ' productos no entran al pedido: cárgales consumo mensual, mínimo o stock ideal (Editar producto).' }));
 }
 
 function renderCon() {
@@ -475,7 +513,7 @@ function renderCon() {
 }
 
 function updateChrome() {
-  const n = [...S.items.values()].filter(needs).length;
+  const n = plan().length;
   const b = $('#pedBadge'); b.hidden = !n; b.textContent = n;
   $('#sub').textContent = (S.itemsReady ? S.items.size + ' productos' : 'Conectando…') + (n ? ' · ' + n + ' para pedir' : '') + ' · ' + new Intl.DateTimeFormat('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date()) + (S.readOnly ? ' · solo lectura' : '');
   document.querySelectorAll('#tabs .tab').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === S.tab));
