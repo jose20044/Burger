@@ -92,6 +92,9 @@ pre.out{background:var(--surface);border:1px solid var(--line);border-radius:8px
 .preview b{color:var(--ink);font-variant-numeric:tabular-nums}
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;max-width:90%;font-weight:500}
 @media (prefers-reduced-motion:no-preference){.row,.btn,.tab{transition:background-color .12s,border-color .12s}}
+textarea{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px;width:100%;margin:8px 0}
+.plaitem{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
 </style>
 </head>
 <body>
@@ -104,12 +107,14 @@ pre.out{background:var(--surface);border:1px solid var(--line);border-radius:8px
     <button class="tab" role="tab" data-tab="inv" aria-selected="true">Inventario</button>
     <button class="tab" role="tab" data-tab="ped" aria-selected="false">Pedido <span class="badge" id="pedBadge" hidden></span></button>
     <button class="tab" role="tab" data-tab="con" aria-selected="false">Consumo</button>
+    <button class="tab" role="tab" data-tab="pla" aria-selected="false">Planilla</button>
   </nav>
   <main id="view"></main>
 </div>
 <div id="sheet" hidden></div>
 <div id="toast" hidden></div>
 
+<script src="xlsx.mini.min.js"></script>
 <script>
 (async function(){
 const $ = s => document.querySelector(s);
@@ -124,7 +129,7 @@ const el = (tag, props = {}, ...kids) => {
     else if (v === true) n.setAttribute(k, '');
     else if (v !== false && v != null) n.setAttribute(k, v);
   }
-  for (const c of kids.flat()) { if (c == null || c === false) continue; n.append(c.nodeType ? c : document.createTextNode(c)); }
+  for (const c of kids.flat(Infinity)) { if (c == null || c === false) continue; n.append(c.nodeType ? c : document.createTextNode(String(c))); }
   return n;
 };
 const fmt = n => Number(n).toLocaleString('es-CL', { maximumFractionDigits: 1 });
@@ -284,7 +289,7 @@ function openSheet(item, start) {
       const cur = item.stock || 0;
       const ok = q >= 0 && !isNaN(q);
       const next = !ok ? null : Math.max(0, r2(mode === 'uso' || mode === 'merma' ? cur - q : mode === 'recibo' ? cur + q : q));
-      prev.replaceChildren('Ahora hay ', el('b', { text: fmt(cur) + ' ' + unit }), next != null ? [' · quedará en ', el('b', { text: fmt(next) + ' ' + unit })] : '');
+      prev.replaceChildren(...[ 'Ahora hay ', el('b', { text: fmt(cur) + ' ' + unit }) ].concat(next != null ? [ ' · quedará en ', el('b', { text: fmt(next) + ' ' + unit }) ] : []));
       save.disabled = !ok || (mode !== 'conteo' && q === 0);
       seg.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', b.dataset.m === mode));
     };
@@ -468,6 +473,124 @@ function renderPed() {
   if (untracked) v.append(el('p', { class: 'note', text: untracked + ' productos no entran al pedido: cárgales consumo mensual, mínimo o stock ideal (Editar producto).' }));
 }
 
+// ---------- Planilla: copia de la planilla de pedidos en Excel ----------
+const PLA = {"titulo": "Planilla de Pedidos Bodega", "tiendas": ["Alameda Il", "Alessandri AK", "Alto Las Condes II Fc", "Apumanque Il", "Balmaceda DT", "Chamisero AK", "Concha y Toro", "Copec San Martin AK", "Coquimbo", "Costanera Center", "Curauma AK", "Curicó", "DK Macul", "Dreams Temuco", "El Faro Fc", "El Llano Il", "Esmax Vespucio", "Espacio M", "Espacio Urbano Antofagasta", "Estación Central Il", "Estado Il", "Florida Center Fc", "Galeria Imperio", "Gran Avenida AK", "Guardia Vieja", "Hernando de Aguirre Il", "Independencia DT", "Irarrazaval Fs", "Irarrazaval Poniente", "La Reina Fs", "Las Rastras", "Libertad", "Los Andes", "Los Heroes IL", "Mac Iver", "Machali DT", "Maipú 5 de Abril Il", "Mall Arauco Chillan", "Mall Arauco Fc", "Mall Arauco Quilicura", "Mall Del Centro Concepcion", "Mall Del Centro Fc", "Mall Independencia", "Mall Paseo Quilin", "Mall Paseo Quilpue", "Mall Plaza Antofagasta", "Mall Plaza Bio Bio", "Mall Plaza Calama", "Mall Plaza Egaña", "Mall Plaza El Trebol", "Mall Plaza La Serena Fc", "Mall Plaza Los Angeles", "Mall Plaza Maule Talca", "Mall Plaza Norte", "Mall Plaza Sur", "Mall Valparaiso", "Manuel Montt", "Marina Arauco Fc", "Mid Mall Maipú", "Monticello", "Padre Hurtado", "Pajaritos", "Parque Arauco Fc", "Paseo Alerce AK", "Paseo Costanera", "Paseo Valdivia", "Paseo Viña Centro", "Pedro Fontova", "Pedro Montt", "Peñalolen", "Plaza Alameda Fc", "Plaza Estacion Fc", "Plaza Los Dominicos", "Plaza Norte 2 Il", "Plaza Oeste Fc", "Plaza Vespucio Fc", "Portal Ñuñoa", "Portal Temuco", "Puerto Montt Peatonal Centro", "Quillota", "Rancagua Fc", "San Martin", "Shopping La Dehesa", "Suecia", "Terval Valdivia", "Tobalaba Fc", "Valdivia Los Rios", "Vespucio AK", "Vicuña Mackenna", "Viña Mall", "Vitacura Fs", "Walmart Oeste", "Walmart Quilicura AK"], "bod": [["7UP BOX 1X19 LT", "LT-ALIMENTOS", "CJA", "Bodega"], ["ACEITE MAESTRA LIQUIDA 2 X 10 LTS", "LT-ALIMENTOS", "CJA", "Bodega"], ["ALCOHOL GEL 800 ML X 6 UN", "LT-LIMPIEZA", "CJA", "Bodega"], ["AROS DE CEBOLLA 16 GRS X 700 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["BALDE BIO PAPA/HELADO 1LT X500U", "LT-EMBALAJE", "CJA", "Bodega"], ["BARRA BROWNIE CHOCOLATE 90GRS X20U", "LT-ALIMENTOS", "CJA", "Bodega"], ["BILZ ZERO BOX 19 LT X 1 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["Bolsa Basura Transparente 200 UN 100 X 120 mm", "LT-LIMPIEZA", "ROL", "Bodega"], ["BOLSA EMPANADAS 1X3000 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["BOLSA PAPA FRITAS 1X6000 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["BOLSA PAPEL DELIVERY SIN ASA X 200 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["BOLSAS 12LB X 1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["BOLSAS 6LB X1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["CACHANTUN C/G PET 1X12 UN", "LT-ALIMENTOS", "PAQ", "Bodega"], ["CACHANTUN S/G PET 1X12 UN", "LT-ALIMENTOS", "PAQ", "Bodega"], ["CAFE MOLIDO FILTRO CLASICO LAVAZZA 226 GRS X 20 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["CAJITA CARTULINA (MRC-245) KING JR ADDAMS FAMILY X 300 UND", "LT-EMBALAJE", "CJA", "Bodega"], ["CAJITA KING JR X 300 UND", "LT-EMBALAJE", "CJA", "Bodega"], ["CARTON CHICKEN FRIES 1X600 UN", "LT-EMBALAJE", "CJA", "Bodega"], ["CEBOLLA FRITA/CRISPY 1KG X10U", "LT-ALIMENTOS", "CJA", "Bodega"], ["CEBOLLA GIRASOLES 1X2 KG.", "LT-ALIMENTOS", "CJA", "Bodega"], ["CHEESE PILLOWS 1 KG X 6 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["CHICKEN CRISPY VEGETAL 100 GRS X 50 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["CHICKEN FRIES 14GRS X 1300 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["CHICKEN PATTY BOLSA 2,5KG x 4 UNID", "LT-ALIMENTOS", "CJA", "Bodega"], ["CHILI CHEESE BITE 1KG X4U", "LT-ALIMENTOS", "CJA", "Bodega"], ["CHUTNEY ADEREZO 1KG X6U", "LT-ALIMENTOS", "UNI", "Bodega"], ["CINTA EMBALAJE TRANSP (48MMX100MT) X 1UN", "LT-EMBALAJE", "UNI", "Bodega"], ["CLAMSHELL DRAGON BALL X250U", "LT-EMBALAJE", "CJA", "Bodega"], ["CO2 PEPSI 1X10 KG", "LT-ALIMENTOS", "UNI", "Bodega"], ["COMPOTA MANZANA 90 GR X 75 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["CONDIMENTO SAL CON PIMIENTA 2.2KG X4U", "LT-ALIMENTOS", "CJA", "Bodega"], ["CONO STANDAR 1X720 UN.", "LT-ALIMENTOS", "CJA", "Bodega"], ["CORONA CARTULINA MRC-250 DBZ X500U", "LT-EMBALAJE", "CJA", "Bodega"], ["CORONA GENERICA 1X500 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["CRISPY GARLIC 283 GRS X 6 UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["CROISSANT 60GRS X20U", "LT-ALIMENTOS", "CJA", "Bodega"], ["CRUSH BOX 1 X 19 LT", "LT-ALIMENTOS", "CJA", "Bodega"], ["CRUSH LATA 350 CC X 24 UNID.", "LT-ALIMENTOS", "PAQ", "Bodega"], ["CUBRE CALZADO 1X1000 UN", "LT-LIMPIEZA", "CJA", "Bodega"], ["CUCHARA MADERA CAFE/TE 110 MM X2000U", "LT-EMBALAJE", "CJA", "Bodega"], ["CUCHARA MW POSTRE X1000U", "LT-ALIMENTOS", "CJA", "Bodega"], ["DELIMER DESCALSIFICADOR 1X48 Un (COD. 1114109)", "LT-LIMPIEZA", "CJA", "Bodega"], ["EMPANADA DE QUESO CONGELADA CL (44g) - 192 u", "LT-ALIMENTOS", "CJA", "Bodega"], ["ENVASE KING SELECTION 1X250 UN", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVASE PAPA GRANDE 1X1500 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVASE PAPA MEDIANO 1X1500 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVASE PAPA PEQUEÑO BK JUNIOR 1 CJ X 700 UN", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVASE PIE 1X2000 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVOLTORIO ESPECIAL 1X2500 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVOLTORIO HAMBURGUESA 1X2500 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVOLTORIO KING SELECTION 1 X 1000 UND", "LT-EMBALAJE", "PAQ", "Bodega"], ["ENVOLTORIO VEGETAL CAJA X 1000 UND", "LT-EMBALAJE", "CJA", "Bodega"], ["ENVOLTORIO WHOPPER 1X2500", "LT-EMBALAJE", "CJA", "Bodega"], ["ESCOBA COLOR ROJO 1 X 1 UN", "LT-LIMPIEZA", "UNI", "Bodega"], ["ESPONJA ABRASIVA VERDE CAJA X 1 X 40 UNI", "LT-LIMPIEZA", "CJA", "Bodega"], ["ETIQ DELIVERY SEGURIDAD ROLLO 500 UND", "LT-EMBALAJE", "ROL", "Bodega"], ["FILTRO 12.5*17.75 1X100  Un", "LT-LIMPIEZA", "CJA", "Bodega"], ["GALLETON DE CHOCOLATE 75GRS X20U", "LT-ALIMENTOS", "CJA", "Bodega"], ["GUANTE BRAZO 1X100 Un", "LT-LIMPIEZA", "UNI", "Bodega"], ["GUANTE VINILO/NITRILO SIN POLVO  MEDIANO CAJA 1 X 100 UN", "LT-LIMPIEZA", "CJA", "Bodega"], ["GUANTE VINILO/NITRILO SIN POLVO GRANDE CAJA 1 X 100 UN", "LT-LIMPIEZA", "CJA", "Bodega"], ["HAMBURGUESA STEAKHOUSE XT 7.0 Oz X 72 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["HUEVO PATTY 60GRS X30U", "LT-ALIMENTOS", "CJA", "Bodega"], ["INDIVIDUAL CUPONERA BK 1X2000 UN", "LT-EMBALAJE", "PAQ", "Bodega"], ["JABÓN ANTIBACTERIAL CAJA 4 X 1GL (CÓD. 1114134)", "LT-LIMPIEZA", "CJA", "Bodega"], ["JABON EPIKLENZ SUAVE 5 LT (COD. 744005) X 1 UND", "LT-LIMPIEZA", "BID", "Bodega"], ["JUGO DE NARANJA LIGHT 200 CC 1X 30 UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["K-5 SANITIZANTE 1X200 Un (COD. 1114107)", "LT-LIMPIEZA", "CJA", "Bodega"], ["KAY QSR LIMP DE BAÑOS (1110001/00830-036) 946 ML X 6 UND", "LT-LIMPIEZA", "CJA", "Bodega"], ["KEM BOX 1 X 19 LT", "LT-ALIMENTOS", "CJA", "Bodega"], ["KEM LATA 350 CC x 24 UNID.", "LT-ALIMENTOS", "PAQ", "Bodega"], ["KETCHUP AGROZZI 12X1,5 Kg", "LT-ALIMENTOS", "CJA", "Bodega"], ["KIT CEPILLO DE MANOS Y UÑAS", "LT-LIMPIEZA", "BOL", "Bodega"], ["LAVALOZA FM500 1GL X 2BOT (COD 7107859)", "LT-LIMPIEZA", "CJA", "Bodega"], ["LECHE ENTERA MID UHT 1 LT X 12 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["LECHUGA GIRASOLES 1X2 Kg", "LT-ALIMENTOS", "CJA", "Bodega"], ["LECHUGA VARIEDAD 500GRS X 1 BOLSA", "LT-ALIMENTOS", "BOL", "Bodega"], ["LIBRO CUADRE FONDO (23X28CM) X 1 UND", "LT-EMBALAJE", "UNI", "Bodega"], ["LIBRO DE CONTROL (23X28CMS) X 1 UND", "LT-EMBALAJE", "UNI", "Bodega"], ["LIMPIADOR DE FREIDORAS 1X6 (COD. 1111747)", "LT-LIMPIEZA", "CJA", "Bodega"], ["LIMPIADOR DE VIDRIO 1X4 (COD. 1114130)", "LT-LIMPIEZA", "CJA", "Bodega"], ["M&M'S 11.34 KG X 1 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["MALLAS DE CABELLO 1X100 Un", "LT-LIMPIEZA", "CJA", "Bodega"], ["MAYONESA GRANEL 12 UN X 1.5 KG", "LT-ALIMENTOS", "CJA", "Bodega"], ["MEDIA LUNA 40 GRS X24U", "LT-ALIMENTOS", "CJA", "Bodega"], ["MEGA PATTY 1.7OZ X 320U", "LT-ALIMENTOS", "CJA", "Bodega"], ["MEGA PATTY 2 OZ X 276 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["MEGA PATTY 2 OZ X 330 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["MEZCLA BOCADO 1X10 KG", "LT-ALIMENTOS", "CJA", "Bodega"], ["MIX 4 FRUTAS CAJA 12 KG X 1 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["MOPA AZUL 1X1 Un", "LT-LIMPIEZA", "UNI", "Bodega"], ["MOPA ROJA 1X1 Un", "LT-LIMPIEZA", "UNI", "Bodega"], ["MOSTAZA BK BULK 2.9 KG X 4 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["NUGGETS 18 grs X 556 UNI", "LT-ALIMENTOS", "CJA", "Bodega"], ["NUGGETS 8 X 118 UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["PALTA CONGELADA 10KG X1U", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAN BOLLO CASERITO CONGELADO 20 UND X 9 BOLSAS", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAN ESPECIAL 1X24 Un", "LT-ALIMENTOS", "BDJ", "Bodega"], ["PAN HAMBURGUESA 1X30 UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAN HAMBURGUESA PAPA CL 4 5/8 X80U", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAN WHOPPER 1X20 Un", "LT-ALIMENTOS", "BDJ", "Bodega"], ["PAN WHOPPER CONGELADO SESAMO NEGRO X180U", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAÑO AMARILLO 1 X 1 ROLLO (174 UN)", "LT-LIMPIEZA", "UNI", "Bodega"], ["PAÑO AZUL 1 X 1 ROLLO (174 UN)", "LT-LIMPIEZA", "UNI", "Bodega"], ["PAÑO ROJO 1 X 1 ROLLO (174 UN)", "LT-LIMPIEZA", "UNI", "Bodega"], ["PAP BOX 1X19 LT", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAPAS FRITAS CON COBERTURA 2,5 KG X 5 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["PAPEL ALUSA 1X1 Un", "LT-LIMPIEZA", "CJA", "Bodega"], ["PAPEL HIGIENICO 500 MT 1X4 UN", "LT-LIMPIEZA", "PAQ", "Bodega"], ["PEPINILLO 1.7 KG X 6 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["PEPSI BOX 1X19 LT", "LT-ALIMENTOS", "CJA", "Bodega"], ["PEPSI LATA 1X24 Un", "LT-ALIMENTOS", "CJA", "Bodega"], ["PEPSI ZERO BAG IN BOX 19 LT", "LT-ALIMENTOS", "CJA", "Bodega"], ["PEPSI ZERO LATA 350 CC X 24 UNID.", "LT-ALIMENTOS", "PAQ", "Bodega"], ["PIE DE CHOCOLATE X 24 Un", "LT-ALIMENTOS", "CJA", "Bodega"], ["PIE DE MANZANA 1X120 Un", "LT-ALIMENTOS", "CJA", "Bodega"], ["POCILLO PAPEL 1OZ X5000U", "LT-EMBALAJE", "CJA", "Bodega"], ["POLLO JR 70 GRS X 142 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["PORTAVASOS KRAFT 1 X 225 UN", "LT-EMBALAJE", "CJA", "Bodega"], ["POTE BIO PARA SNACK C/LOGO 500CC X500U", "LT-EMBALAJE", "CJA", "Bodega"], ["QUESO CHEDDAR 1 X 18,40 KGS", "LT-ALIMENTOS", "CJA", "Bodega"], ["QUESO FONDUE PROVOLONE & AZUL 1KG X 8UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["QUESO PARMESANO ESCAMA 500GRSX10U", "LT-ALIMENTOS", "CJA", "Bodega"], ["REBEL WHOPPER 90 GR X 72 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["RED BULL LATA 250 CC X 24 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["RED BULL SUGAR FREE LATA 250 CC X 24 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["RED BULL YELLOW LATA 250 CC X 24 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["REVOLVEDOR MADERA 14 CMS X 1000 UND", "LT-EMBALAJE", "BOL", "Bodega"], ["ROLLO BOLSA PREPICADA 40 X 60 (APROX 10 KG)", "LT-LIMPIEZA", "ROL", "Bodega"], ["ROLLO MAQUINA +80-80 1x60 UN", "LT-EMBALAJE", "CJA", "Bodega"], ["SAL INDIVIDUAL 1X2000 Un", "LT-ALIMENTOS", "CJA", "Bodega"], ["SAL MESA 1 X 10 KGS", "LT-ALIMENTOS", "PAQ", "Bodega"], ["SALSA BBQ 2.5 KG X 4 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["SALSA CHEDDAR BOLSA  1 KG X 8 UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["SALSA DULCE DE LECHE 1KG X 6 BOLSAS", "LT-ALIMENTOS", "CJA", "Bodega"], ["SALSA STACKER 2.5 KG X 4 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["SALSA TERIYAKI POUCH 1KG X6UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["SERVILLETA INTERF. 1 X 9000 UNI", "LT-EMBALAJE", "CJA", "Bodega"], ["SINK SANITIZANTE 1X200 Un (COD. 1114108)", "LT-LIMPIEZA", "CJA", "Bodega"], ["SOBRES DE DEPOSITO 11.5X22.5 X500U", "LT-EMBALAJE", "CJA", "Bodega"], ["SYRUP DE CHOCOLATE 2,5 KG X 4 BOLSAS", "LT-ALIMENTOS", "CJA", "Bodega"], ["TAPA 12 OZ CON BOQUILLA 1 X 2000 UN", "LT-EMBALAJE", "CJA", "Bodega"], ["TAPA CON BOQUILLA 16/21OZ X2000U", "LT-EMBALAJE", "CJA", "Bodega"], ["TE NEGRO EARL GREY 50 BOLSAS X 6 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["TE VERDE X 500 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["TEST DE CLORO 1 X 1 (COD. KV0965)", "LT-LIMPIEZA", "TUB", "Bodega"], ["TITAN DESENGRASANTE 1X15.2 Lt (COD. 1114105)", "LT-LIMPIEZA", "BLD", "Bodega"], ["TOALLA ROLLO 250 MT 1X2 UN", "LT-LIMPIEZA", "PAQ", "Bodega"], ["TOCINO 1X1800 Un", "LT-ALIMENTOS", "CJA", "Bodega"], ["TOCINO X 2400 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["TOMATE  1X16 KILOS", "LT-ALIMENTOS", "CJA", "Bodega"], ["VASO 12 OZ 1X2000 Un", "LT-EMBALAJE", "CJA", "Bodega"], ["VASO BIO 16OZ X1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["VASO BIO 21OZ X1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["VASO BIO CALIENTE 14OZ X1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["VASO BIO CALIENTE 9OZ X1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["VASO BIO KING MIX X1000U", "LT-EMBALAJE", "CJA", "Bodega"], ["VASO BIO SUNDAE X2400U", "LT-EMBALAJE", "CJA", "Bodega"], ["VEGI WASH 1X100 Un (COD. 1054)", "LT-LIMPIEZA", "CJA", "Bodega"], ["WHOPPER PATTY 1X144 UN", "LT-ALIMENTOS", "CJA", "Bodega"], ["WHOPPER PATTY 4 OZ X 152 UND", "LT-ALIMENTOS", "CJA", "Bodega"], ["WHOPPER PATTY TF 4 Oz X 152 UND", "LT-ALIMENTOS", "CJA", "Bodega"]], "cons": {"PAN WHOPPER 1X20 Un": 524.95, "PAPAS FRITAS CON COBERTURA 2,5 KG X 5 UND": 265.92, "PAN HAMBURGUESA 1X30 UN": 166.86, "WHOPPER PATTY TF 4 Oz X 152 UND": 117.9, "LECHUGA GIRASOLES 1X2 Kg": 108.5, "CEBOLLA ARO 1X2 KG.": 65.5, "PAN ESPECIAL 1X24 Un": 64, "TOMATE  1X16 KILOS": 32.5, "EMPANADA DE QUESO CONGELADA CL (44g) - 192 u": 30.38, "PEPSI LATA 1X24 Un": 26.29, "MEGA PATTY 1.7OZ X 320U": 25.39, "CACHANTUN S/G PET 1X12 UN": 25.33, "ACEITE MAESTRA LIQUIDA 2 X 10 LTS": 23, "QUESO CHEDDAR 1 X 18,40 KGS": 21.24, "LECHUGA VARIEDAD 500GRS X 1 BOLSA": 21, "KETCHUP AGROZZI 12X1,5 Kg": 20, "JUGO DE NARANJA LIGHT 200 CC 1X 30 UN": 18.97, "KEM LATA 350 CC x 24 UNID.": 18.16, "PEPSI BOX 1X19 LT": 18.06, "AROS DE CEBOLLA 16 GRS X 700 UND": 18.06, "PEPSI ZERO LATA 350 CC X 24 UNID.": 16.16, "CINTA EMBALAJE TRANSP (48MMX100MT) X 1UN": 16, "PEPINILLO 1.7 KG X 6 UND": 15.8, "MEZCLA BOCADO 1X10 KG": 15.47, "TOALLA ROLLO 250 MT 1X2 UN": 15, "BOLSA PAPEL DELIVERY SIN ASA X 200 UND": 13, "REBEL WHOPPER 90 GR X 72 UND": 12.82, "ETIQ DELIVERY SEGURIDAD ROLLO 500 UND": 12, "MAYONESA GRANEL 12 UN X 1.5 KG": 11.5, "CACHANTUN C/G PET 1X12 UN": 11, "VASO BIO 16OZ X1000U": 10.1, "NUGGETS 8 X 118 UN": 10.05, "WHOPPER PATTY TF 4 Oz X 144 UND": 10, "HAMBURGUESA STEAKHOUSE XT 7.0 Oz X 72 UND": 9.93, "SERVILLETA INTERF. 1 X 9000 UNI": 9.57, "CHICKEN PATTY BOLSA 2,5KG x 4 UNID": 9.39, "PEPSI ZERO BAG IN BOX 19 LT": 9.12, "CO2 PEPSI 1X10 KG": 9, "ENVOLTORIO WHOPPER 1X2500": 8.9, "PAN HAMBURGUESA PAPA CL 4 5/8 X80U": 8.82, "TOCINO X 2400 UND": 8.79, "COMPOTA MANZANA 90 GR X 75 UND": 7.54, "GUANTE VINILO/NITRILO SIN POLVO GRANDE CAJA 1 X 100 UN": 7, "PIE DE CHOCOLATE X 24 Un": 6.71, "PAN WHOPPER CONGELADO SESAMO NEGRO X180U": 6.71, "CHEESE PILLOWS 1 KG X 6 UND": 6.03, "ENVASE PAPA GRANDE 1X1500 Un": 6, "BOLSAS 6LB X1000U": 6, "7UP BOX 1X19 LT": 5.85, "BOLSAS 4LB X1000U": 5.5, "SALSA STACKER 2.5 KG X 4 UND": 5.5, "GUANTE VINILO/NITRILO SIN POLVO  MEDIANO CAJA 1 X 100 UN": 5, "CHICKEN CRISPY VEGETAL 100 GRS X 50 UND": 4.7, "ENVASE PAPA MEDIANO 1X1500 Un": 4.5, "PALTA CONGELADA 10KG X1U": 4.5, "KEM BOX 1 X 19 LT": 4.49, "CRUSH LATA 350 CC X 24 UNID.": 4.21, "BILZ ZERO BOX 19 LT X 1 UND": 4.2, "CHILI CHEESE BITE 1KG X4U": 4.18, "VASO BIO 21OZ X1000U": 4.1, "PAÑO ROJO 1 X 1 ROLLO (174 UN)": 4, "NUGGETS 18 grs X 556 UNI": 4, "LAVALOZA FM500 1GL X 2BOT (COD 7107859)": 4, "POCILLO PAPEL 1OZ X5000U": 3.5, "CAJITA KING JR X 300 UND": 3.3, "MEDIA LUNA 40 GRS X24U": 3.29, "SALSA BBQ 2.5 KG X 4 UND": 3.25, "ENVASE PAPA PEQUEÑO BK JUNIOR 1 CJ X 700 UN": 3, "BOLSAS 12LB X 1000U": 3, "CRUSH BOX 1 X 19 LT": 2.9, "CUBRE CALZADO 1X1000 UN": 2.7, "BALDE BIO PAPA/HELADO 1LT X500U": 2.6, "CONO STANDAR 1X720 UN.": 2.55, "GALLETON DE CHOCOLATE 75GRS X20U": 2.55, "RED BULL LATA 250 CC X 24 UND": 2.46, "ENVOLTORIO HAMBURGUESA 1X2500 Un": 2.4, "ALCOHOL GEL 800 ML X 6 UN": 2.33, "PAP BOX 1X19 LT": 2.02, "TITAN DESENGRASANTE 1X15.2 Lt (COD. 1114105)": 2, "MALLAS DE CABELLO 1X100 Un": 2, "ESPONJA ABRASIVA VERDE CAJA X 1 X 40 UNI": 2, "PAÑO AMARILLO 1 X 1 ROLLO (174 UN)": 2, "CAJITA CARTULINA (MRC-245) KING JR ADDAMS FAMILY X 300 UND": 2, "VASO BIO 12OZ X2000U": 2, "TAPA CON BOQUILLA 16/21OZ X2000U": 2, "PAN BOLLO CASERITO CONGELADO 20 UND X 9 BOLSAS": 2, "SALSA TERIYAKI POUCH 1KG X6UN": 2, "TAPA/VASO BIO CALIENTE 9OZX 2000U": 1.95, "BARRA BROWNIE CHOCOLATE 90GRS X20U": 1.4, "CHICKEN FRIES 14GRS X 1300 UND": 1.4, "ESCOBA COLOR ROJO 1 X 1 UN": 1, "PALA BASURA BASCULANTE": 1, "PORTAVASOS KRAFT 1 X 225 UN": 1, "ENVOLTORIO VEGETAL CAJA X 1000 UND": 1, "M&M'S 11.34 KG X 1 UND": 1, "CORONA CARTULINA MRC-250 DBZ X500U": 1, "CEBOLLA FRITA/CRISPY 1KG X10U": 1, "BOLSA PAPA FRITAS 1X6000 Un": 1, "BOLSA 4 LB 1X2000 Un": 1, "PAPEL ALUSA 1X1 Un": 1, "MOPA ROJA 1X1 Un": 1, "CORONA GENERICA 1X500 Un": 1, "SALSA CHEDDAR BOLSA  1 KG X 8 UN": 1, "SALSA DULCE DE LECHE 1KG X 6 BOLSAS": 1, "CAJA DELIVERY BK 2.0 X 150 UND": 0.95, "PIE DE MANZANA 1X120 Un": 0.92, "ROLLO MAQUINA +80-80 1x60 UN": 0.9, "SAL MESA 1 X 10 KGS": 0.9, "TAPA/VASO BIO CALIENTE 12OZ X2000U": 0.9, "POLLO JR 70 GRS X 142 UND": 0.84, "ENVOLTORIO KING SELECTION 1 X 1000 UND": 0.8, "QUESO PARMESANO ESCAMA 500GRSX10U": 0.8, "CRISPY GARLIC 283 GRS X 6 UN": 0.77, "PAPEL HIGIENICO 500 MT 1X4 UN": 0.75, "Bolsa Basura Transparente 200 UN 100 X 120 mm": 0.6, "VEGI WASH 1X100 Un (COD. 1054)": 0.6, "SAL INDIVIDUAL 1X2000 Un": 0.5, "BOLSA EMPANADAS 1X3000 Un": 0.5, "K-5 SANITIZANTE 1X200 Un (COD. 1114107)": 0.5, "VASO KING MIX 1 X 1000 UN": 0.5, "JABÓN ANTIBACTERIAL CAJA 4 X 1GL (CÓD. 1114134)": 0.5, "MIX 4 FRUTAS CAJA 12 KG X 1 UND": 0.5, "LECHE ENTERA MID UHT 1 LT X 12 UND": 0.5, "CUCHARA MADERA CAFE/TE 110 MM X2000U": 0.5, "CLAMSHELL DRAGON BALL X250U": 0.5, "FILTRO 12.5*17.75 1X100  Un": 0.5, "CARTON CHICKEN FRIES 1X600 UN": 0.5, "SYRUP DE CHOCOLATE 2,5 KG X 4 BOLSAS": 0.5, "ENVOLTORIO ESPECIAL 1X2500 Un": 0.4, "CAFE MOLIDO FILTRO CLASICO LAVAZZA 226 GRS X 20 UND": 0.35, "CHUTNEY ADEREZO 1KG X6U": 0.34, "QUESO FONDUE PROVOLONE & AZUL 1KG X 8UN": 0.3, "CONDIMENTO SAL CON PIMIENTA 2.2KG X4U": 0.3, "MOSTAZA BK BULK 2.9 KG X 4 UND": 0.3, "DELIMER DESCALSIFICADOR 1X48 Un (COD. 1114109)": 0.2, "BIO-SHIELD DRAIN MAINTENANCE": 0.2, "SINK SANITIZANTE 1X200 Un (COD. 1114108)": 0.2, "ENVASE PIE 1X2000 Un": 0.2, "TE NEGRO ENGLISH BREAKFAST 50 BOLSAS X 6 UND": 0.17, "VASO SUNDAE 1X2400 UN": 0.13, "ROLLO BOLSA PREPICADA 40 X 60 (APROX 10 KG)": 0.1}, "sheets": {"Ideal": {"t": "Planilla de Pedidos Ideal", "u": "Bolsas", "rows": [["PAN ESPECIAL 1X24 Un", 24.0], ["PAN HAMBURGUESA 1X30 UN", 30.0], ["PAN WHOPPER 1X20 Un", 20.0]]}, "CCU": {"t": "Planilla de Pedidos CCU", "u": "Cajas", "rows": [["7UP BOX 1X19 LT", 19.0], ["BILZ ZERO BOX 19 LT X 1 UND", 19.0], ["CACHANTUN C/G PET 1X12 UN", 12.0], ["CACHANTUN S/G PET 1X12 UN", 12.0], ["CRUSH BOX 1 X 19 LT", 19.0], ["CRUSH LATA 350 CC X 24 UNID.", 24.0], ["KEM BOX 1 X 19 LT", 19.0], ["KEM LATA 350 CC x 24 UNID.", 24.0], ["PAP BOX 1X19 LT", 19.0], ["PEPSI BOX 1X19 LT", 19.0], ["PEPSI LATA 1X24 Un", 24.0], ["PEPSI ZERO BAG IN BOX 19 LT", 19.0], ["PEPSI ZERO LATA 350 CC X 24 UNID.", 24.0], ["RED BULL LATA 250 CC X 24 UND", 24.0], ["RED BULL SUGAR FREE LATA 250 CC X 24 UND", 24.0], ["RED BULL YELLOW LATA 250 CC X 24 UND", 24.0]]}, "Bantu": {"t": "Planilla de Pedidos Bantu", "u": "Bolsas", "rows": [["CEBOLLA ARO 1X2 KG.", 2.0], ["TOMATE  1X16 KILOS", 16.0]]}, "Girasoles": {"t": "Planilla de Pedidos Girasoles", "u": "Bolsas", "rows": [["LECHUGA GIRASOLES 1X2 Kg", 2.0], ["LECHUGA VARIEDAD 500GRS X 1 BOLSA", 0.5]]}}};
+const PKEY = 'bk-pla-v1';
+let PS = { tienda: 'Plaza Vespucio Fc', dias: 7, cons: null, sheet: 'Bodega', q: '', blocks: {} };
+try { Object.assign(PS, JSON.parse(localStorage.getItem(PKEY)) || {}); } catch (e) {}
+const savePS = () => { try { localStorage.setItem(PKEY, JSON.stringify(PS)); } catch (e) { toast('No se pudo guardar en el celular.'); } };
+const consOf = n => (PS.cons || PLA.cons)[n];
+const num = x => parseFloat(String(x).replace(',', '.')) || 0;
+const f2 = n => Number(n).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+const fld = (l, node) => el('div', { class: 'field' }, el('label', { text: l }), node);
+const mkSel = (opts, val, on) => { const s = el('select', {}, el('option', { value: '', text: 'Seleccionar' }), opts.map(o => el('option', { value: o, text: o }))); s.value = val || ''; s.addEventListener('change', () => on(s.value)); return s; };
+const copyBtn = (label, get) => el('button', { class: 'btn primary', text: label, onclick: async () => { try { await navigator.clipboard.writeText(get()); toast('Pedido copiado'); } catch (e) { toast('No se pudo copiar'); } } });
+const fechaHoy = () => new Intl.DateTimeFormat('es-CL', { day: 'numeric', month: 'long' }).format(new Date());
+
+// ---------- integración con Excel (importar / exportar) ----------
+function excelOk() { if (typeof XLSX === 'undefined') { toast('El lector de Excel no cargó. Recarga la app con internet una vez.'); return false; } return true; }
+function importExcel() {
+  if (!excelOk()) return;
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.xls,.xlsm,.csv';
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const name = wb.SheetNames.find(n => /consumo/i.test(n)) || wb.SheetNames[0];
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
+      let hi = rows.findIndex(r => r.some(c => /cantidad/i.test(String(c))) && r.some(c => /descrip/i.test(String(c))));
+      let di = 0, ci = 2;
+      if (hi >= 0) { di = rows[hi].findIndex(c => /descrip/i.test(String(c))); ci = rows[hi].findIndex(c => /cantidad/i.test(String(c))); }
+      const c = {}; let n = 0;
+      for (const r of rows.slice(hi + 1)) {
+        const d = String(r[di] || '').trim(); const q = typeof r[ci] === 'number' ? r[ci] : parseFloat(String(r[ci]).replace(',', '.'));
+        if (d && isFinite(q)) { c[d] = Math.abs(q); n++; }
+      }
+      if (!n) { toast('No encontré productos con cantidad en «' + name + '».'); return; }
+      PS.cons = c; savePS(); toast(n + ' productos cargados desde «' + name + '»'); render();
+    } catch (e) { toast('No pude leer ese archivo de Excel.'); }
+  });
+  inp.click();
+}
+function exportExcel() {
+  if (!excelOk()) return;
+  const wb = XLSX.utils.book_new();
+  const add = (n, aoa, w) => { const s = XLSX.utils.aoa_to_sheet(aoa); s['!cols'] = w.map(x => ({ wch: x })); XLSX.utils.book_append_sheet(wb, s, n); };
+  add('Bodega', [['Tienda', PS.tienda, '', '', '', '', 'Días', PS.dias], [], ['Producto', 'Categoría', 'UDM', 'Proveedor', 'Consumo mensual', 'Consumo diario', 'Días', 'A pedir']]
+    .concat(PLA.bod.map(([n, c, u, p]) => { const m = consOf(n); const d = m == null ? '' : m / 30; return [n, c, u, p, m == null ? '' : m, d === '' ? '' : Math.round(d * 1000) / 1000, PS.dias, d === '' ? '' : Math.round((d * PS.dias + d) * 100) / 100]; })), [48, 14, 7, 11, 16, 14, 7, 10]);
+  for (const [name, sh] of Object.entries(PLA.sheets)) {
+    const bl = PS.blocks[name] || [{}, {}, {}]; const aoa = [[sh.t, 'Tienda', PS.tienda]];
+    bl.forEach((b, i) => {
+      aoa.push([], ['Pedido ' + (i + 1), 'Pide', b.pide || '', 'Llega', b.llega || '']);
+      aoa.push(['Producto', 'Inv inicial', 'Recepción 1', 'Recepción 2', 'Uso', 'Pedido', 'N° ' + sh.u]);
+      sh.rows.forEach(([n, dv]) => { const x = (b.v || {})[n] || {}; const p = (num(x.i) + num(x.u)) - (num(x.a) + num(x.b)); aoa.push([n, x.i === undefined || x.i === '' ? '' : num(x.i), x.a === undefined || x.a === '' ? '' : num(x.a), x.b === undefined || x.b === '' ? '' : num(x.b), x.u === undefined || x.u === '' ? '' : num(x.u), p, Math.round(p / dv * 100) / 100]); });
+    });
+    add(name, aoa, [48, 12, 12, 12, 10, 10, 12]);
+  }
+  const inv = sortedItems();
+  add('Inventario', [['Producto', 'Categoría', 'Unidad', 'Stock', 'Mínimo', 'Stock ideal', 'Consumo mensual']].concat(inv.map(i => [i.name, i.cat || '', i.unit || '', i.stock || 0, i.min || 0, i.par || 0, i.mensual || 0])), [40, 18, 8, 9, 9, 11, 15]);
+  XLSX.writeFile(wb, 'pedidos-bk-' + today() + '.xlsx');
+  toast('Excel exportado');
+}
+
+function renderPla() {
+  const v = $('#view'); v.replaceChildren();
+  v.append(el('div', { class: 'chips' }, ['Bodega', ...Object.keys(PLA.sheets)].map(s => el('button', { class: 'btn' + (PS.sheet === s ? ' primary' : ''), text: s, onclick: () => { PS.sheet = s; savePS(); render(); } }))));
+  v.append(fld('Tienda', mkSel(PLA.tiendas, PS.tienda, x => { PS.tienda = x; savePS(); })));
+  v.append(el('div', { class: 'two' }, el('button', { class: 'btn', text: 'Importar Excel', onclick: importExcel }), el('button', { class: 'btn primary', text: 'Exportar a Excel', onclick: exportExcel })));
+  PS.sheet === 'Bodega' ? plaBodega(v) : plaProv(v, PS.sheet);
+}
+function plaBodega(v) {
+  const dias = el('input', { type: 'number', inputmode: 'decimal', min: '0', value: PS.dias });
+  const q = el('input', { type: 'search', placeholder: 'Buscar producto', value: PS.q || '' });
+  const paste = el('textarea', { rows: '5', placeholder: 'Pega aquí las 3 columnas (DESCRIPCION, ORIGEN, CANTIDAD) de la hoja Consumo del Excel' });
+  const imp = el('button', { class: 'btn', text: 'Cargar consumo pegado', onclick: () => {
+    const c = {}; let n = 0;
+    for (const l of paste.value.split(/\r?\n/)) { const p = l.split('\t'); const last = p[p.length - 1] || ''; if (p.length >= 3 && p[0].trim() && /\d/.test(last)) { c[p[0].trim()] = Math.abs(num(last)); n++; } }
+    if (!n) { toast('No encontré filas. Copia las 3 columnas desde Excel.'); return; }
+    PS.cons = c; savePS(); toast(n + ' productos cargados'); render();
+  } });
+  const list = el('div', { class: 'group' });
+  const rowsNow = () => PLA.bod.map(([n, c, u, p]) => { const m = consOf(n); const d = m == null ? null : m / 30; return { n, c, u, p, m, d, a: d == null ? null : d * PS.dias + d }; })
+    .filter(r => !PS.q || r.n.toLowerCase().includes(PS.q.toLowerCase()));
+  const draw = () => {
+    list.replaceChildren(...rowsNow().map(r => el('button', { class: 'row' },
+      el('span', { class: 'name' }, el('b', { text: r.n }), el('small', { text: r.u + ' · ' + r.c + ' · ' + r.p + (r.m == null ? ' · sin consumo' : ' · mensual ' + f2(r.m) + ' · diario ' + f2(r.d)) })),
+      el('span', { class: 'qty' }, r.a == null ? '—' : f2(r.a), el('small', { text: 'a pedir' })))));
+  };
+  dias.addEventListener('input', () => { PS.dias = num(dias.value); savePS(); draw(); });
+  q.addEventListener('input', () => { PS.q = q.value; draw(); });
+  v.append(el('h2', { text: PLA.titulo }), fld('Días de abastecimiento', dias),
+    el('p', { class: 'note', text: 'A pedir = consumo diario × días + consumo diario. Consumo diario = consumo mensual ÷ 30.' }),
+    q, copyBtn('Copiar pedido Bodega', () => 'Pedido Bodega · ' + PS.tienda + ' · ' + fechaHoy() + '\n' + rowsNow().filter(r => r.a > 0).map(r => '- ' + r.n + ': ' + f2(r.a) + ' ' + r.u).join('\n')),
+    list, el('details', {}, el('summary', { text: 'Actualizar consumo del mes' }), paste, imp));
+  draw();
+}
+function plaProv(v, name) {
+  const sh = PLA.sheets[name], bl = PS.blocks[name] || (PS.blocks[name] = [{}, {}, {}]);
+  v.append(el('h2', { text: sh.t }));
+  bl.forEach((b, bi) => {
+    b.v = b.v || {};
+    const pick = (k, l) => fld(l, mkSel(DIAS.map(d => d.replace('é', 'e')), b[k], x => { b[k] = x; savePS(); render(); }));
+    const pedido = n => { const x = b.v[n] || {}; return (num(x.i) + num(x.u)) - (num(x.a) + num(x.b)); };
+    const g = el('section', { class: 'group' }, el('h2', { text: 'Pedido ' + (bi + 1) }),
+      el('div', { class: 'two' }, pick('pide', 'Pide'), pick('llega', 'Llega')),
+      el('div', { class: 'two' }, pick('d0', 'Día inv. inicial'), pick('d1', 'Día recepción 1')), el('div', { class: 'two' }, pick('d2', 'Día recepción 2'), el('div')));
+    sh.rows.forEach(([n, dv]) => {
+      const x = b.v[n] || (b.v[n] = {}); const o1 = el('b'), o2 = el('b');
+      const upd = () => { const p = pedido(n); o1.textContent = f2(p); o2.textContent = f2(p / dv); };
+      const inp = (k, l) => { const i = el('input', { type: 'number', inputmode: 'decimal', step: 'any', value: x[k] == null ? '' : x[k] }); i.addEventListener('input', () => { x[k] = i.value; savePS(); upd(); }); return fld(l, i); };
+      upd();
+      g.append(el('div', { class: 'plaitem' }, el('b', { text: n }),
+        el('div', { class: 'two' }, inp('i', 'Inv. inicial' + (b.d0 ? ' (' + b.d0 + ')' : '')), inp('a', 'Recepción' + (b.d1 ? ' (' + b.d1 + ')' : ''))),
+        el('div', { class: 'two' }, inp('b', 'Recepción' + (b.d2 ? ' (' + b.d2 + ')' : '')), inp('u', 'Uso (Pos usado)')),
+        el('p', { class: 'note' }, 'Pedido ', o1, ' · N° ' + sh.u + ' ', o2)));
+    });
+    g.append(copyBtn('Copiar pedido ' + (bi + 1), () => 'Pedido ' + name + ' · ' + PS.tienda + ' · pide ' + (b.pide || '?') + ', llega ' + (b.llega || '?') + '\n' + sh.rows.filter(([n, dv]) => pedido(n) / dv > 0).map(([n, dv]) => '- ' + n + ': ' + f2(pedido(n) / dv) + ' ' + sh.u.toLowerCase()).join('\n')));
+    v.append(g);
+  });
+}
+
 function renderCon() {
   const v = $('#view'); v.replaceChildren();
   const seg = el('div', { class: 'seg' },
@@ -520,7 +643,7 @@ function updateChrome() {
 }
 function render() {
   updateChrome();
-  (S.tab === 'inv' ? renderInv : S.tab === 'ped' ? renderPed : renderCon)();
+  (S.tab === 'inv' ? renderInv : S.tab === 'ped' ? renderPed : S.tab === 'pla' ? renderPla : renderCon)();
 }
 function refresh() {
   updateChrome();
