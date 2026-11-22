@@ -533,6 +533,33 @@ function exportExcel() {
   toast('Excel exportado');
 }
 
+
+// ---------- autollenado de la planilla desde el inventario diario ----------
+const MAPA = {"7UP BOX 1X19 LT": "Jarabe 7UP 19 Lts", "BILZ ZERO BOX 19 LT X 1 UND": "Jarabe Bilz 19 Lts", "CRUSH BOX 1 X 19 LT": "Jarabe Crush 19 Lts", "KEM BOX 1 X 19 LT": "Jarabe Kem 19 Lts", "PAP BOX 1X19 LT": "Jarabe Pap 19 Lts", "PEPSI BOX 1X19 LT": "Jarabe Pepsi 19 Lts", "PEPSI ZERO BAG IN BOX 19 LT": "Jarabe Pepsi Zero 19 Lts", "CRUSH LATA 350 CC X 24 UNID.": "Lata Crush", "KEM LATA 350 CC x 24 UNID.": "Lata Kem", "PEPSI LATA 1X24 Un": "Lata Pepsi 350 cc", "PEPSI ZERO LATA 350 CC X 24 UNID.": "Lata Pepsi Zero", "RED BULL LATA 250 CC X 24 UND": "Redbull Lata 250cc x24", "RED BULL SUGAR FREE LATA 250 CC X 24 UND": "Redbull Sugar Free Lata", "RED BULL YELLOW LATA 250 CC X 24 UND": "Redbull Yellow Lata 250cc", "CACHANTUN C/G PET 1X12 UN": "Cachantun Gas", "CACHANTUN S/G PET 1X12 UN": "Cachantun Sin Gas", "CEBOLLA ARO 1X2 KG.": "Cebolla Bolsa", "TOMATE  1X16 KILOS": "Tomate", "LECHUGA GIRASOLES 1X2 Kg": "Lechuga Procesada Bolsa", "LECHUGA VARIEDAD 500GRS X 1 BOLSA": "Lechuga Variedad 500 Gr", "PAN ESPECIAL 1X24 Un": "Pan Especiales 24 Un", "PAN HAMBURGUESA 1X30 UN": "Pan Hamburguesa 30 Un", "PAN WHOPPER 1X20 Un": "Pan Whopper 20 Un"};
+function autoFill(name, b) {
+  const sh = PLA.sheets[name];
+  if (!b.desde || !b.hasta) { toast('Elige la fecha desde y hasta de este pedido.'); return; }
+  if (b.desde > b.hasta) { toast('La fecha «desde» no puede ser después de «hasta».'); return; }
+  const porNombre = new Map([...S.items.values()].map(i => [i.name, i]));
+  const dias = [...S.usage.values()].filter(d => d.day >= b.desde && d.day <= b.hasta);
+  b.v = b.v || {}; let n = 0, falt = 0;
+  for (const [pn] of sh.rows) {
+    const it = porNombre.get(MAPA[pn]);
+    if (!it) { falt++; continue; }
+    let uso = 0, rec = 0;
+    for (const d of dias) {
+      uso += ((d.used || {})[it.id] || 0) + ((d.waste || {})[it.id] || 0);
+      rec += (d.received || {})[it.id] || 0;
+    }
+    const x = b.v[pn] || (b.v[pn] = {});
+    x.i = String(r2((it.stock || 0) - rec + uso));
+    x.a = rec ? String(r2(rec)) : ''; x.b = ''; x.u = String(r2(uso));
+    n++;
+  }
+  savePS(); render();
+  toast(n + ' productos rellenados' + (falt ? ' · ' + falt + ' sin pareja' : ''));
+}
+
 function renderPla() {
   const v = $('#view'); v.replaceChildren();
   v.append(el('div', { class: 'chips' }, ['Bodega', ...Object.keys(PLA.sheets)].map(s => el('button', { class: 'btn' + (PS.sheet === s ? ' primary' : ''), text: s, onclick: () => { PS.sheet = s; savePS(); render(); } }))));
@@ -575,7 +602,10 @@ function plaProv(v, name) {
     const pedido = n => { const x = b.v[n] || {}; return (num(x.i) + num(x.u)) - (num(x.a) + num(x.b)); };
     const g = el('section', { class: 'group' }, el('h2', { text: 'Pedido ' + (bi + 1) }),
       el('div', { class: 'two' }, pick('pide', 'Pide'), pick('llega', 'Llega')),
-      el('div', { class: 'two' }, pick('d0', 'Día inv. inicial'), pick('d1', 'Día recepción 1')), el('div', { class: 'two' }, pick('d2', 'Día recepción 2'), el('div')));
+      el('div', { class: 'two' }, pick('d0', 'Día inv. inicial'), pick('d1', 'Día recepción 1')), el('div', { class: 'two' }, pick('d2', 'Día recepción 2'), el('div')),
+      el('div', { class: 'two' }, fld('Desde (fecha)', (() => { const i = el('input', { type: 'date', value: b.desde || '' }); i.addEventListener('change', () => { b.desde = i.value; savePS(); }); return i; })()),
+        fld('Hasta (fecha)', (() => { const i = el('input', { type: 'date', value: b.hasta || '' }); i.addEventListener('change', () => { b.hasta = i.value; savePS(); }); return i; })())),
+      el('button', { class: 'btn', text: 'Rellenar desde el inventario', onclick: () => autoFill(name, b) }));
     sh.rows.forEach(([n, dv]) => {
       const x = b.v[n] || (b.v[n] = {}); const o1 = el('b'), o2 = el('b');
       const upd = () => { const p = pedido(n); o1.textContent = f2(p); o2.textContent = f2(p / dv); };
